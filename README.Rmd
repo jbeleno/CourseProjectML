@@ -1,0 +1,120 @@
+---
+title: "Course Project: Predicting ways of performing barebell fit with accelerometers data"
+author: "Juan Sebastián Beleño Díaz"
+date: "3/9/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Executive Summary
+
+I built a Random Forest model to predict the way of performing barebell lift 
+according to data collected from accelerometers on the belt, forearm, arm, and
+dumbell of 6 participants. The dataset is a subset of data collected from this
+[source](http://groupware.les.inf.puc-rio.br/har). My model seems to have a 
+100% of accuracy, which can be (or not) due to overfitting. However, I performed
+cross-validation with 5 folds to avoid that. Moreover, I did a simple data 
+analysis and feature selection before using the data on the model.
+
+## Getting Data
+
+Training and testing dataset were provided in the description of the course project.
+I manually opened the dataset before coding and I was able to identify that
+many variables had white space and NA values. Hence, I decided to add the `na.string`
+parameter in the `read.csv` function to convert such string values in NA values 
+recognized by R. Moreover, I print the dimensions of the dataset to have a baseline 
+before performing feature selection: 19622 rows and 160 columns (variables).
+
+```{r}
+training_data_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+raw_df <- read.csv(training_data_url, header=T, sep = ",", na.strings = c("", "NA"))
+dim(raw_df)
+```
+
+## Feature Selection
+
+As I found many variables with NA values in the manual inspection, I decided to 
+select variables that has less than 20% of NA values, because I assum that if
+we allow more than such threshold, we will get poor results. Moreover, I printed
+the dimension of the dataset after such feature selection, which gaves as result
+60 variables. 100 variables were dropped after the feature selection. 62.5% of
+variables were removed from the dataset.
+
+```{r}
+na_threshold = 0.2
+accepted_size <- nrow(raw_df)*na_threshold
+na_values_per_column <- colSums(is.na(raw_df))
+tidy_df <- raw_df[, na_values_per_column < accepted_size] 
+dim(tidy_df)
+```
+
+I also found that the values of the outcome variable (`classe`) are "almost" 
+equally distributed. Thus, it is not necessary to balance the dataset.
+
+```{r}
+library(plyr)
+count(tidy_df$classe)
+```
+
+# Splitting the Datasets
+
+I created a seed equal to `31337` in order to increase the reproducibility of 
+my results. The initial dataset was separated in training and testing dataset.
+75% of the data for training and 25% for testing. Moreover, a validation dataset
+was created using the variables (columns) present in the training dataset, but 
+without the `classe` variable.
+
+```{r}
+library(caret)
+set.seed(31337)
+inTrain = createDataPartition(tidy_df$classe, p = 3/4)[[1]]
+training = tidy_df[ inTrain,]
+testing = tidy_df[-inTrain,]
+
+validation_data_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+columns <- colnames(training)
+columns <- columns[columns != "classe"]
+raw_validation <- read.csv(validation_data_url, header=T, sep = ",", na.strings = c("", "NA"))
+validation <- raw_validation[, columns]
+```
+
+# Creating the Predictor Model
+
+I decided to use Random Forest because it is one of the models that provides
+more precision. The overfitting was controlled by using cross-validation with 
+5 folds.
+
+```{r}
+# Defining a general train control
+tc <- trainControl(method = "cv", number = 5)
+
+# Random Forest
+model <- train(classe ~ .,data=training,method="rf",trControl= tc)
+model
+```
+
+# Results
+
+After running the model on the testing datasets, the results present a 100%
+accuracy, which can be (or not) due to overfitting. However, I think the 
+cross-validation works and the model actually has such accuracy.
+
+```{r}
+# Prediction in the testing dataset
+predictionRf <- predict(model, newdata = testing)
+
+# Estimated accuracy out of the sample
+confusionMatrix(predictionRf, testing$classe)$overall[1]
+```
+
+Furthermore, the model was used to predict the outcome variable in the 
+validation dataset.
+
+```{r}
+# Predict `classe` in the validation dataset
+predictionRfValidation <- predict(model, newdata = validation)
+predictionRfValidation
+```
